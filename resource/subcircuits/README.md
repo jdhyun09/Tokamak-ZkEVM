@@ -1,345 +1,129 @@
-# Tokamak zk-EVM
+# circom-ethereum-opcodes
 
-Development of a new zk-EVM for L2 rollup.
+Circom circuit set of the Ethereum opcodes
 
-Tokamak zk-EVM := zero-knowledge proof (e.g., SNARK) + multi-party verification (e.g., Fault proof system of Optimism)
+## Goal
 
-## Technical goals
+Tokamak team is working toward a zk-EVM which is capable to execute EVM bytecode and generate a zk-SNARK proof based on our SNARK paper "[An Efficient SNARK for Field-Programmable and RAM Circuits
+](https://eprint.iacr.org/2024/507)".
+The original Groth16 requires high cost "setup" for every single transaction since it is a circuit-speicific SNARK. On the other hand, universal SNARKs such as Plonk would be enough with just a single setup but the existing protocols cause humongous computation overhead in proving and verifying algorithm.
 
-1. Development of a new zk-SNARK
-    - (A1) New theory establishment (academic paper)
-    - (A2) Practical implementation of our SNARK
-2. Development of our zk-EVM
-    - (B1) EVM circuit implementation
-    - (B2) Adaptation of an existing multi-party verification system
-    - (B3) Documentation (specification)
-    - (B4) Demonstration and fine-tuning
-3. Operation of a testing rollup network based on our zk-EVM
-    - (C1) Adaptation of an existing rollup network organization (network entities, penalty and reward policies, …)
-    - (C2) Demonstration and fine-tuning
+Every transaction might execute different functions with different arguments but all the execution steps can be broken down into the EVM opcode set; the executed opcodes should be in the EVM instruction set even though the order of opcode execution would be different.
 
-## Progress so far (as of Apr. 2024)
-|Milestone|A1|A2|B1|B2|B3|B4|C1|C2|
-|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-|Progress|Done|Just begun|Finalizing|Just begun|Just begun|Not started|Not started| Not started|
+Our approach is to take advantage of those two different types of SNARK protocols by assembling each EVM opcode circuit in the order of executions by a transaction; it would be fast to prove and verify like circuit-speicific SNARKs and require only a single setup phase similar to universal SNARKs. It is enough to make setups for the EVM opcode circuits, rather than you need setups everytime transaction occurs. This allows us to make all transactions zk-provable after a single of the setup phase, using [Tokamak-ZkEVM](https://github.com/tokamak-network/Tokamak-ZkEVM) without any huge sacrifice in terms of cost to prove or verify.
 
-## Expected contributions
+This repository aims to implement zk-SNARK provable circuits of the EVM instruction set along Tokamak zk-EVM plan.
 
-- We aim to explore a new area of compromising the trade-off between existing zk-rollups (ZKR) and optimistic rollups (OR).
-- For academic motivation, see Introduction of [our SNARK paper](https://eprint.iacr.org/2024/507).
-- Our compromises are ultimately to make Ethereum viable for mass adoption ([Vitalik's post will help you get an overview of the shortcomings of traditional rollups](https://vitalik.eth.limo/general/2021/01/05/rollup.html)).
-- The compromises are as follows:
-    - Higher compatibility with EVM (than ZKR, but possibly worse than OR)
-    - Lower offchain computation costs ⇒ higher transaction throughput in L2 (than ZKR, but possibly worse than OR)
-    - Faster, more dynamic, and predictable withdrawal to L1 (than OR, but possibly worse than ZKR)
-    - Lower security dependency on data availability ⇒ higher scalability in L1 (than OR, but possibly worse than ZKR)
+## Directory tree
 
-## How to use our SNARK?
-**_!The current implementation explained below will be reworked soon, as there have been numerous changes to our theory!_**
-### Protocol composition
-
-UniGro16 consists of eight algorithms: compile, buildQAP, generateWitness, decode, setup, derive, prove, and verify.
-
-- **compile** takes circom implementations of all EVM instructions as inputs and outputs respective R1CSs and wasms and metadata.
-- **buildQAP** takes R1CSs and an EVM parameter as inputs and outputs respective QAP polynomials
-- **decode (written in MATLAB script)** takes a p-code(bytecode) of an EVM application, initial storage data, and the EVM instruction metadata as inputs and outputs instances for all instructions used in a p-code and a wire map that contaning circuit information of an EVM application.
-- **setup** takes the R1CSs and EVM parameters as inputs and outputs a universal reference string.
-- **derive** takes the universal reference string and the wire map as inputs and outputs a circuit-specific reference string.
-- **generateWitness** takes instances and the wasms for all instructions used in a p-code as inputs and outputs respective witnesses. Each witness includes the instance as well.
-- **prove** takes the circuit-specific reference string, the witnesses, the QAPs and the wire map as inputs and outputs a proof.
-- **verify** takes the proof, the circuit-specific reference string, the instances, and the wire map as inputs and prints out whether the proof is valid or not.
-
-### Explanation for the inputs and outputs
-
-- EVM instructions: Arithmetic opcodes including keccak256 in EVM from 0x01 to 0x20
-- Circom implementation: A circom script to execute an opcode and build its (sub)circuit.
-- R1CS: A set of wires and constraints forming the (sub)circuit of a circom implementation (called subcircuit)
-- wasm: A script of executing an opcode ported in wasm
-- WILL BE UPDATED
-
-### Prerequisites and preparation for use
-
-- Implementing circoms and generating R1CSs and wasms needs to install Circom package by Iden3.
-  - [How to install Circom](https://docs.circom.io/getting-started/installation/)
-- Some of libraries by Iden3 are used.
-  - How to install Iden3 libraries
-
-      ```bash
-     git clone https://github.com/tokamak-network/UniGro16js.git
-     cd UniGro16js
-     npm install
-     ```
-
-- Compatibility with EVM (in the current version)
-  - [compile](https://github.com/tokamak-network/circom-ethereum-opcodes/blob/main/README.md)
-  - [decode](https://github.com/tokamak-network/UniGroth16_Decode/blob/master/Decode/readme.md)
-
-- Parameters
-  - \[sD]: The number of instructions defined in an EVM.
-  - \[sMax]: The maximum number of arithmetic opcodes (might be defined by an EVM system) that can be contained in an EVM application (p-code).
-  - \[rsName]: The file name (string) for a universal reference string.
-  - \[crsName]: The file name for a circuit-specific reference string.
-  - \[circuitName]: The directory name for a circuit (EVM application).
-  - \[instanceId]: The index for an instance of a circuit.
-  <!-- - \[prfName]: The file name for a proof. -->
-  <!-- - \[anyNumber]: Any number for a seed of random number generation. -->
-
-### How to use
-
-<!-- All file names used in the following commands does not include the file name extensions (e.g., for "refstr.rs", just type "refstr") -->
-
-You can use the interactive command by adding the following commands to your terminal
-
-```bash
-# build
-$ npm run buildcli
-
-# You can execute the interactive CLI app by adding one of the following commands to your terminal.
-
-# 1. use the command anywhere in your terminal
-$ npm link
-$ unigroth
-
-# 2. use the build file
-$ node build/cli.cjs
-
-# 3. run the following command in the project directory
-$ node . 
+```text
+circuits
+├── templates
+│   ├── 128bit
+│   │   ├── adder.circom
+│   │   ├── divider.circom
+│   │   ├── exp.circom
+│   │   └── multiplier.circom
+│   ├── arithmetic_func.circom
+│   ├── bit_extractor.circom
+│   ├── comparators.circom
+│   ├── divider.circom
+│   └── two_to_the_power_of_n.circom
+├── add.circom
+├── addmod.circom
+├── and.circom
+├── byte.circom
+├── div.circom
+├── eq.circom
+├── exp.circom
+├── gt.circom
+├── iszero.circom
+├── load.circom
+├── lt.circom
+├── mod.circom
+├── mul.circom
+├── mulmod.circom
+├── not.circom
+├── or.circom
+├── sar.circom
+├── sdiv.circom
+├── sgt.circom
+├── sha3.circom
+├── shl.circom
+├── shr.circom
+├── signextend.circom
+├── slt.circom
+├── smod.circom
+├── sub.circom
+└── xor.circom
 ```
 
-- **compile**
+- `templates`: The set of circuits and functions frequently used by the sub-circuits. The circuits under `128bit` assume to take 128-bit length values.
 
-  ![compile](/examples/compile.gif)
-  
-  <!-- - Be sure that the input [circom scripts](https://github.com/tokamak-network/circom-ethereum-opcodes/blob/main/README.md) are placed in ```./resource/subcircuits/circom/[instruction name]\_test.circom```. -->
-  <!-- - Go to the directory ```./resource/subcircuits```.
-  - Enter the command ```./compile.sh```. -->
-  - Find the output EVM information in ```./resource/subcircuits/wire_list.json```, where the index for each instruction is numbered.
-  - Find the output R1CSs in ```./resources/subcircuits/R1CS/subcircuit#.r1cs``` for all indices # of instructions upto sD-1.
-  - Find the output wasms ```./resources/subcircuits/wasm/subcircuit#.wasm``` for all indices # of instructions upto sD-1.
+## Circuit design
 
-- **buildQAP**
+The circuits are implemented following the instruction definitions in Ethereum yellow paper.
 
-  ![build-qap](/examples/qap.gif)
+To learn more about Circom, please check [the official document](https://docs.circom.io/).
 
-  - Be sure that the R1CSs generated by compile are placed in the proper directory.
-  <!-- - Enter the command ```node  .  qap-all  bn128  [sD]  [sMax]```. -->
-  - Find an output QAP parameter in ```./resource/subcircuits/param_[sD]_[sMax].dat```.
-  - Find the output QAPs in ```./resource/subcircuits/QAP_[sD]_[sMax]/subcircuit#.qap``` for all indices # of instructions upto sD-1.
-  
-- **setup**
+### Input
 
-  ![setup](/examples/setup.gif)
+The circuits take one or multiple input signals such as "`in1`" or "`in2`".
 
-  - Be sure that the R1CSs generated by compile are placed in the proper directory.
-  <!-- - Enter the command ```node . setup param_[sD]_[sMax] [rsName] QAP\_sD\_s_max [anyNumber]```. -->
-  - Find the output universal reference string in ```./resource/universal_rs/[rsName].urs```.
+Due to limitation where the Circom's finite field prime (BN128) is 254-bit sized value, each circuit takes two 128-bit length values to be compatible with 32-byte words.
 
-- **decode**
-  - [How to run decode](https://github.com/tokamak-network/UniGroth16_Decode/blob/master/Decode/readme.md)
-  - Copy and paste the output circuit information into ```./resource/circuits/[circuitName]/{OpList.bin, Set_I_P.bin, Set_I_V.bin, WireList.bin}```.
-  - Copy and paste the output instances into ```./resource/circuits/[circuitName]/instance[instanceId]/{input_opcode#.json, output_opcode#.json}``` for all indices # of opcodes used in an EVM application less than sMax.
+Signed integers are represented as two's complements.
 
-- **derive**
+### Output
 
-  ![derive](/examples/derive.gif)
+All the opcode circuits return a single output except `load` for a special use.
 
-  - Be sure that the circuit information generated by decode are placed in the proper directory.
-  <!-- - Enter the command ```node . derive [input rs file name] [crsName] [circuitName] QAP\_sD\_s_max```. -->
-  - Find the output circuit-specific reference string in ```./resource/circuits/[circuitName]/[crsName].crs```.
+The circuits returns two 128-bit values as output signals.
 
-- **generateWitness**
+### Number of constraints per opcode
+|Arithmetic Opcode|0x01 ADD|0x02 MUL|0x03 SUB|0x04 DIV|0x05 SDIV|0x06 MOD|0x07 SMOD|0x08 ADDMOD|0x09 MULMOD|0x0A EXP|0x0B SIGNEXTEND|
+|---|---|---|---|---|---|---|---|---|---|---|---|
+|Constraints|256|522|256|1054|*4155|1054|*4155|*1445|*2239|🚧 WIP|*2823|
 
-  - In the current version, generatedWitness is called during the run of prove (will be updated to be separately executed).
-  - Find the output witnesses in ```./resource/circuits/[circuitName]/witness[instanceId]/witness#.wtns``` for all indices # of opcodes used in an EVM application less than sMax.
+|Comparators Opcode|0x10 LT|0x11 GT|0x12 SLT|0x13 SGT|0x14 EQ|0x15 ISZERO|
+|---|---|---|---|---|---|---|
+|Constraints|262|262|520|520|5|5|
 
-- **prove**
+|Bitwise Opcode|0x16 AND|0x17 OR|0x18 XOR|0x19 NOT|0x1A BYTE|0x1B SHL|0x1C SHR|0x1D SAR|
+|---|---|---|---|---|---|---|---|---|
+|Constraints|768|768|768|256|308|326|325|1063
 
-  ![prove](/examples/prove.gif)
+*: Improvement is required to be used in products.
 
-  <!-- - Be sure that all the outputs of the above algorithms are placed in the proper directories. -->
-  <!-- - Enter the command ```node . prove [crsName] [prfName] [circuitName] [instanceId] [anyNumber]```. -->
-  - Find the output proof in ```./resource/circuits/[circuitName]/[prfName].proof```.
+Most Cost is the range check cost. For future research on optimization, please check [Further Research](#further-research) below.
 
-- **verify**
+### Our SNARK Primitive - Subcircuit library
+Refer to [our SNARK paper](https://eprint.iacr.org/2024/507.pdf) "3 Front-end preprocess: System of constraints and setup algorithm"
 
-  ![verify](/examples/verify.gif)
+### Our Limitation
+- EXP
 
-  <!-- - Be sure that all the outputs of the above algorithms are placed in the proper directories. -->
-  <!-- - Enter the command ```node . verify [prfName] [crsName] [circuitName] [instanceId]```. -->
-  - Check the verification results displayed in terminal.
+    As the exponent range is [0,2**256), if an EXP circuit is implemented, it will be the most expensive among the above opcodes. In other words, including an EXP single circuit in the subcircuit library has the disadvantage of being expensive. One good approach is to implement the EXP operation using the MUL opcode circuit already in the subcircuit library.
 
-### Test run example
+- SHA3
 
-- An example EVM system
-  
-  - [Circom scripts](https://github.com/tokamak-network/UniGro16js/tree/master/resource/subcircuits/circom) of [12 instructions](https://github.com/tokamak-network/UniGro16js/blob/master/resource/subcircuits/subcircuit_info.json).
-  
-  - This system supports applications with instances of length 16 (this number can be modified in [here](https://github.com/tokamak-network/UniGro16js/blob/master/resource/subcircuits/circom/circuits/load.circom)).
+    [Keccak256](https://github.com/vocdoni/keccak256-circom) hash function is implemented in Circom by [Vocdoni](https://github.com/vocdoni). However, it needs around 151k constraints by Keccak's zk-unfriendliness. It is too expensive to put it in a subcircuit library.
 
-- Two EVM application examples
-  
-  - Application-1: [A prove implementation of Schnorr protocol](https://github.com/tokamak-network/UniGro16js/blob/master/resource/circuits/schnorr_prove/readme.md)
 
-    - [p-code](https://github.com/tokamak-network/UniGro16js/blob/master/resource/circuits/schnorr_prove/bytes_schnorr_prove.txt)
+## Further Research
 
-    - Two instance sets are prepared: [instance-1-1](https://github.com/tokamak-network/UniGro16js/blob/master/resource/circuits/schnorr_prove/instance1/scenario.txt), [instance-1-2](https://github.com/tokamak-network/UniGro16js/blob/master/resource/circuits/schnorr_prove/instance2/scenario.txt)
+How to reduce range check constraints
 
-  - Application-2: [A verify implementation of Schnorr protocol](https://github.com/tokamak-network/UniGro16js/blob/master/resource/circuits/schnorr_verify/readme.md)
+- About R1CS range check : [Simple R1CS range check and truncation](https://hackmd.io/@7dpNYqjKQGeYC7wMlPxHtQ/B1w_9nq2Y)
 
-    - [p-code](https://github.com/tokamak-network/UniGro16js/blob/master/resource/circuits/schnorr_verify/bytes_schnorr_verify.txt)
+Can we Use Lookup?
 
-    - [Instance-2-1](https://github.com/tokamak-network/UniGro16js/blob/master/resource/circuits/schnorr_verify/instance1/scenario.txt)
-  
-  - Both applications use less than 18 arithmetic instructions (i.e., sMax = 18).
+- [GroLup: Plookup for R1CS](https://ethresear.ch/t/grolup-plookup-for-r1cs/14307)
 
-- As **decode** has no build currently, we provide the outputs of **decode** that have been created in advance.
+- [Can Groth16 support lookups?](https://hackmd.io/@Merlin404/SJmtF_k-2)
 
-- Test run commands
+Optimize our zk-EVM Subcircuit library
 
-  1. **Compile**
-
-      choose *compile* command
-
-  2. **Build QAP**
-
-      Select the following options.
-
-      - What is the name of curve?: `BN128`
-
-      - How many instructions are defined in the EVM?: `12`
-
-      - The maximum number of arithmetic instructions in the EVM application? `18`
-
-  3. **Setup**
-
-      Select the following options.
-
-      - Which parameter file will you use?: `[Workspace]/UniGro16js/resource/subcircuits/param_12_18.dat`
-
-      - Which QAP will you use? `[Workspace]/UniGro16js/resource/subcircuits/QAP_12_18`
-
-      - What is the name of the universial reference string file? `rs_18`
-  
-  4. **Derive**
-
-      a. Select the following options for application-1.
-
-      - Which circuit will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_prove`
-
-      - Which reference string file will you use? `[Workspace]/UniGro16js/resource/universal_rs/rs_18.urs`
-
-      - Which QAP will you use? `[Workspace]/UniGro16js/resource/subcircuits/QAP_12_18`
-
-      - What is the name of the circuit-specific reference string file? `crs_schnorr_prove`
-
-      b. Select the following options for application-2
-
-      - Which circuit will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_verify`
-
-      - Which reference string file will you use? `[Workspace]/UniGro16js/resource/universal_rs/rs_18.urs`
-
-      - Which QAP will you use? `[Workspace]/UniGro16js/resource/subcircuits/QAP_12_18`
-
-      - What is the name of the circuit-specific reference string file? `crs_schnorr_verify`
-
-  5. **Prove**
-
-      a. Select the following options for the instance-1-1 of the application-1.
-
-      - Which circuit-specific reference string will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_prove/crs_schnorr_prove.crs`
-
-      - Which circuit will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_prove`
-
-      - What is the index of the instance of the circuit? `1`
-
-      - What is the name of the proof? `proof1`
-  
-      b. Select the following options for the instance-1-2 of the application-1.
-
-      - Which circuit-specific reference string will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_prove/crs_schnorr_prove.crs`
-
-      - Which circuit will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_prove`
-
-      - What is the index of the instance of the circuit? `2`
-
-      - What is the name of the proof? `proof2`
-
-      c. Select the following options for the instance-2-1 of the application-2.
-
-      - Which circuit-specific reference string will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_verify/crsSchnorr_verify.crs`
-
-      - Which circuit will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_verify`
-
-      - What is the index of the instance of the circuit? `1`
-
-      - What is the name of the proof? `proof`
-
-  6. **Verify**
-
-      a. Select the following options for the instance-1-1 of the application-1.
-
-      - Which circuit-specific reference string will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_prove/crs_schnorr_prove.crs`
-
-      - Which circuit will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_prove`
-
-      - What is the index of the instance of the circuit? `1`
-
-      - Which proof will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_prove/proof1.proof`
-  
-      b. Select the following options for the instance-1-2 of the application-1.
-
-      - Which circuit-specific reference string will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_prove/crs_schnorr_prove.crs`
-
-      - Which circuit will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_prove`
-
-      - What is the index of the instance of the circuit? `2`
-
-      - Which proof will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_prove/proof2.proof`
-
-      c. Select the following options for the instance-2-1 of the application-2.
-
-      - Which circuit-specific reference string will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_verify/crsSchnorr_verify.crs`
-
-      - Which circuit will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_verify`
-
-      - What is the index of the instance of the circuit? `1`
-
-      - Which proof will you use? `[Workspace]/UniGro16js/resource/circuits/schnorr_verify/proof.proof`
-  
-  Since this is under construction, you can set `TEST_MODE` environment variable to true for testing
-
-- Summary of input parameters used for the test run
-
-|Parameters |Application-1 with instance-1-1  |Application-1 with instance-1-2  |Application-2 with instance-2-1|
-|:---------:|:---------:|:---------:|:-------:|
-|sD        |12|12|12|
-|sMax      |18|18|18|
-|rsName     |"rs_18"|"rs_18"|"rs_18"|
-|crsName    |"crsSchnorr_prove"|"crsSchnorr_prove"|"crsSchnorr_verify"|
-|circuitName|"schnorr_prove"|"schnorr_prove"|"schnorr_verify"|
-|instanceId|    1|    2|    1|
-|prfName|"proof1"|"proof2"|"proof"|
-|anyNumber|1|1|1|
-
-## Related Docs
-- About the current implementation (outdated)
-   - [Performance test report](https://github.com/tokamak-network/UniGro16js/blob/master/Performance.md)
-   - [The technical specification of current implementation (outdated)](https://drive.google.com/file/d/1DTEWbiKalPe3l1ohniP60jlyr-vIUiuH/view?usp=sharing)
-   - [History of implementation updates](https://github.com/tokamak-network/UniGro16js/blob/master/UpdateHistory.md)
-- Articles related to Tokamak zk-EVM project   
-   - [About Tokamak zk-EVM project](https://medium.com/onther-tech/project-tokamak-zk-evm-67483656fd21)
-   - [Tokamak zk-EVM Q1 report](https://medium.com/onther-tech/tokamak-zk-evm-q1-report-1f7e369ec0d8)
-   - [Tokamak zk-EVM Q2 report](https://medium.com/onther-tech/tokamak-zk-evm-q2-report-9a264eba417f)
-   - [Tokamak zk-EVM Q3 report](https://medium.com/onther-tech/tokamak-zk-evm-q3-report-69102605077b)
-   - [Tokamak zk-EVM Q4 report](https://medium.com/onther-tech/tokamak-zk-evm-q4-report-d2985b4513b2)
-- Formal Docs
-   - [Jehyuk Jang and Jamie Judd, "An Efficient SNARK for Field-Programmable and RAM Circuits," Mar. 2024](https://eprint.iacr.org/2024/507)
-
-## Contact
-
-- [jake@tokamak.network](mailto:jake@tokamak.network)
-
-## Licence
-
-- [GPLv3](https://github.com/tokamak-network/UniGro16js/blob/master/COPYING.md)
+- Splitting opcode operations. (e.g. SDIV => sign_bit extraction circuit + subcircuit already in subcircuit library)
+    - [Using lazy loading for duplicate subcircuit constraints](https://hackmd.io/@JIJKVPoYSZaHxu42ObOitQ/SJDZWE-Gh)
+- Combine opposing opcodes into one subcircuit. (e.g. <0x10 LT, 0x11 GT>,<0x12 SLT, 0x13 SGT>)
